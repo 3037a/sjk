@@ -1,0 +1,104 @@
+-- 删除现有数据库（如果存在）
+DROP DATABASE IF EXISTS score;
+CREATE DATABASE score CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE score;
+
+-- ==================== 表结构 ====================
+
+-- 1. 用户表（使用明文密码）
+CREATE TABLE users (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(50) NOT NULL COMMENT '明文密码',
+    role ENUM('admin', 'student') NOT NULL DEFAULT 'student',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. 学生表
+CREATE TABLE students (
+    student_id VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    gender ENUM('男', '女') DEFAULT '男',
+    user_id INT UNIQUE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 3. 成绩表
+CREATE TABLE scores (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    student_id VARCHAR(20) UNIQUE NOT NULL,
+    total_score DECIMAL(5,2) DEFAULT 0.00,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+);
+
+-- ==================== 初始化数据 ====================
+
+-- 创建管理员账户（明文密码：88888）
+INSERT INTO users (username, password, role) VALUES 
+('admin', '88888', 'admin');
+
+-- 创建示例学生（明文密码：学号）
+INSERT INTO users (username, password, role) VALUES 
+('2023001', '2023001', 'student'),
+('2023002', '2023002', 'student'),
+('2023003', '2023003', 'student'),
+('2023004', '2023004', 'student'),
+('2023005', '2023005', 'student');
+
+-- 插入学生信息
+INSERT INTO students (student_id, name, gender, user_id) VALUES
+('2023001', '张三', '男', 2),
+('2023002', '李四', '女', 3),
+('2023003', '王五', '男', 4),
+('2023004', '赵六', '女', 5),
+('2023005', '孙七', '男', 6);
+
+-- 插入成绩
+INSERT INTO scores (student_id, total_score) VALUES
+('2023001', 85.5),
+('2023002', 92.0),
+('2023003', 78.5),
+('2023004', 88.0),
+('2023005', 65.5);
+
+-- ==================== 视图 ====================
+
+-- 学生成绩视图
+CREATE VIEW v_student_scores AS
+SELECT 
+    s.student_id AS 学号,
+    s.name AS 姓名,
+    s.gender AS 性别,
+    IFNULL(sc.total_score, 0.00) AS 总成绩,
+    u.password AS 密码,
+    u.role AS 角色
+FROM students s
+JOIN users u ON s.user_id = u.id
+LEFT JOIN scores sc ON s.student_id = sc.student_id
+ORDER BY s.student_id;
+
+-- ==================== 测试查询 ====================
+
+SELECT '=== 系统用户信息 ===' AS '';
+SELECT * FROM users;
+
+SELECT '\n=== 学生成绩信息 ===' AS '';
+SELECT * FROM v_student_scores;
+
+SELECT '\n=== 登录测试 ===' AS '';
+SELECT 
+    '管理员登录: admin / 88888' AS 测试用例,
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM users WHERE username = 'admin' AND password = '88888') 
+        THEN '✓ 通过' 
+        ELSE '✗ 失败' 
+    END AS 结果
+UNION ALL
+SELECT 
+    '学生登录: 2023001 / 2023001',
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM users WHERE username = '2023001' AND password = '2023001') 
+        THEN '✓ 通过' 
+        ELSE '✗ 失败' 
+    END;
