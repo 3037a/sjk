@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>学生页面</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .info-card { background: #f5f5f5; padding: 20px; border-radius: 10px; margin: 20px 0; }
+        .info-item { margin: 10px 0; }
+        .score { font-size: 48px; color: #667eea; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>学生成绩查询</h1>
+    <p>这里是学生页面，显示个人信息和成绩</p>
+
+    <div id="loading">正在加载个人信息...</div>
+    <div id="infoCard" class="info-card" style="display:none;">
+        <h2 id="studentName">姓名</h2>
+        <div class="score" id="score">0</div>
+        <div class="info-item">学号：<span id="studentId">-</span></div>
+        <div class="info-item">性别：<span id="gender">-</span></div>
+        <div class="info-item">成绩等级：<span id="grade">-</span></div>
+    </div>
+
+    <script>
+        // 检查是否登录
+        const user = JSON.parse(localStorage.getItem('user'));
+        if (!user || user.role !== 'student') {
+            alert('请先登录学生账号');
+            window.location.href = '/';
+        }
+
+        // 加载个人信息
+        async function loadMyInfo() {
+            try {
+                const response = await fetch(`/api/student/myinfo?student_id=${user.student_id}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        displayInfo(data.data);
+                    }
+                }
+            } catch (error) {
+                document.getElementById('loading').innerHTML = '加载失败';
+            }
+        }
+
+        function displayInfo(data) {
+            document.getElementById('studentId').textContent = data.student_id;
+            document.getElementById('studentName').textContent = data.name;
+            document.getElementById('gender').textContent = data.gender;
+            document.getElementById('score').textContent = data.score;
+
+            // 计算等级
+            const score = parseFloat(data.score || 0);
+            let grade = '';
+            if (score >= 90) grade = '优秀';
+            else if (score >= 80) grade = '良好';
+            else if (score >= 70) grade = '中等';
+            else if (score >= 60) grade = '及格';
+            else grade = '不及格';
+
+            document.getElementById('grade').textContent = grade;
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('infoCard').style.display = 'block';
+        }
+
+        // 页面加载时获取数据
+        loadMyInfo();
+    </script>
+</body>
+</html>
