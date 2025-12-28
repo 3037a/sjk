@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>管理员页面</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+        .header { background: #667eea; color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        h1 { margin: 0; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; }
+        th, td { padding: 12px; text-align: center; border-bottom: 1px solid #ddd; }
+        th { background: #667eea; color: white; }
+        input { width: 80px; padding: 5px; }
+        button { padding: 5px 10px; margin: 0 3px; cursor: pointer; }
+        .save-btn { background: #48bb78; color: white; border: none; }
+        .delete-btn { background: #f56565; color: white; border: none; }
+        .logout-btn { background: #ed8936; color: white; padding: 8px 15px; border: none; float: right; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>学生成绩管理系统 - 管理员</h1>
+        <button class="logout-btn" onclick="logout()">退出</button>
+    </div>
+
+    <div id="loading">正在加载数据...</div>
+
+    <div id="content" style="display:none;">
+        <table id="studentTable">
+            <thead>
+                <tr>
+                    <th>学号</th>
+                    <th>姓名</th>
+                    <th>性别</th>
+                    <th>成绩</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="studentTableBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // 检查是否登录
+        const user = JSON.parse(localStorage.getItem('user'));
+        if (!user || user.role !== 'admin') {
+            alert('请先登录管理员');
+            window.location.href = '/';
+        }
+
+        // 加载学生数据
+        async function loadStudents() {
+            try {
+                const response = await fetch('/api/admin/students');
+                const result = await response.json();
+
+                if (result.success) {
+                    displayStudents(result.data);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('content').style.display = 'block';
+                }
+            } catch (error) {
+                alert('加载失败');
+            }
+        }
+
+        // 显示学生
+        function displayStudents(students) {
+            const tbody = document.getElementById('studentTableBody');
+            tbody.innerHTML = '';
+
+            students.forEach(student => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${student.student_id}</td>
+                    <td>${student.name}</td>
+                    <td>${student.gender}</td>
+                    <td><input type="number" id="score_${student.student_id}" value="${student.score}" min="0" max="100"></td>
+                    <td>
+                        <button class="save-btn" onclick="updateScore('${student.student_id}')">保存</button>
+                        <button class="delete-btn" onclick="deleteStudent('${student.student_id}')">删除</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // 更新成绩
+        async function updateScore(studentId) {
+            const scoreInput = document.getElementById(`score_${studentId}`);
+            const newScore = scoreInput.value;
+
+            if (!newScore || newScore < 0 || newScore > 100) {
+                alert('成绩必须是0-100的数字');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/update_score', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        student_id: studentId,
+                        score: newScore
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert('修改成功');
+                } else {
+                    alert('失败: ' + result.message);
+                }
+            } catch (error) {
+                alert('网络错误');
+            }
+        }
+
+        // 删除学生
+        async function deleteStudent(studentId) {
+            if (!confirm(`确定删除学号 ${studentId} 吗？`)) return;
+
+            try {
+                const response = await fetch('/api/admin/delete_student', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ student_id: studentId })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert('删除成功');
+                    loadStudents(); // 重新加载
+                } else {
+                    alert('失败: ' + result.message);
+                }
+            } catch (error) {
+                alert('网络错误');
+            }
+        }
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('user');
+            window.location.href = '/';
+        }
+
+        // 页面加载时执行
+        loadStudents();
+    </script>
+</body>
+</html>
