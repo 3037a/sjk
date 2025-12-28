@@ -1,0 +1,281 @@
+rom flask import Flask, render_template, request, jsonify, session
+import pymysql
+import os
+
+# ==================== 自动创建模板文件 ====================
+def create_templates_if_not_exist():
+    """创建模板文件夹和HTML文件"""
+    # ...（保持原来的模板创建代码不变）...
+
+# ==================== 先创建模板文件 ====================
+create_templates_if_not_exist()
+
+# ==================== Flask应用 ====================
+app = Flask(__name__)
+app.secret_key = 'student_system_2024'
+
+# ==================== 数据库配置 ====================
+DB_HOST = "localhost"
+DB_USER = "root"
+DB_PASSWORD = "20062013aa"  # 你的MySQL密码，如果没有就留空
+DB_NAME = "score"
+
+def get_db():
+    """连接数据库"""
+    try:
+        conn = pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        return conn
+    except Exception as e:
+        print(f"❌ 数据库连接失败: {e}")
+        return None
+
+# ==================== API接口 ====================
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """用户登录"""
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+
+    print(f"📝 登录尝试: {username}/{password}")
+
+    conn = get_db()
+    if not conn:
+        return jsonify({'success': False, 'message': '数据库连接失败'})
+
+    try:
+        with conn.cursor() as cursor:
+            # 查询用户
+            sql = "SELECT id, username, password, role FROM users WHERE username = %s AND password = %s"
+            cursor.execute(sql, (username, password))
+            user = cursor.fetchone()
+
+            if user:
+                # 如果是学生，获取学号
+                if user['role'] == 'student':
+                    cursor.execute("SELECT student_id FROM students WHERE user_id = %s", user['id'])
+                    student = cursor.fetchone()
+                    if student:
+                        user['student_id'] = student['student_id']
+
+                print(f"✅ 登录成功: {username}")
+                return jsonify({
+                    'success': True,
+                    'message': '登录成功',
+                    'data': user
+                })
+            else:
+                print(f"❌ 登录失败: {username}")
+                return jsonify({'success': False, 'message': '用户名或密码错误'})
+    except Exception as e:
+        print(f"❌ 登录错误: {e}")
+        return jsonify({'success': False, 'message': f'服务器错误: {str(e)}'})
+    finally:
+        conn.close()
+
+@app.route('/api/admin/students', methods=['GET'])
+def get_all_students():
+    """获取所有学生信息（管理员用）"""
+    conn = get_db()
+    if not conn:
+        return jsonify({'success': False, 'message': '数据库连接失败'})
+
+    try:
+        with conn.cursor() as cursor:
+            sql = """
+                SELECT 
+                    s.student_id,
+                    s.name,
+                    s.gender,
+                    IFNULL(sc.total_score, 0) as score
+                FROM students s
+                LEFT JOIN scores sc ON s.student_id = sc.student_id
+                ORDER BY s.student_id
+            """
+            cursor.execute(sql)
+            students = cursor.fetchall()
+
+            return jsonify({
+                'success': True,
+                'data': students
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+# ==================== 新添加的API ====================
+
+@app.route('/api/admin/update_score', methods=['POST'])
+def update_score():
+    """更新学生成绩"""
+    data = request.json
+    student_id = data.get('student_id')
+    new_score = data.get('score')
+
+    print(f"📝 更新成绩请求: 学号={student_id}, 新成绩={new_score}")
+
+    if not student_id or new_score is None:
+        return jsonify({'success': False, 'message': '参数错误：缺少学号或成绩'})
+
+    try:
+        # 验证成绩是数字且在0-100之间
+        new_score = float(new_score)
+        if new_score < 0 or new_score > 100:
+            return jsonify({'success': False, 'message': '成绩必须在0-100之间'})
+    except ValueError:
+        return jsonify({'success': False, 'message': '成绩必须是数字'})
+
+    conn = get_db()
+    if not conn:
+        return jsonify({'success': False, 'message': '数据库连接失败'})
+
+    try:
+        with conn.cursor() as cursor:
+            # 1. 检查学生是否存在
+            cursor.execute("SELECT student_id FROM students WHERE student_id = %s", (student_id,))
+            student = cursor.fetchone()
+
+            if not student:
+                return jsonify({'success': False, 'message': f'学号 {student_id} 不存在'})
+
+            # 2. 更新成绩（如果不存在则插入）
+            sql = """
+                INSERT INTO scores (student_id, total_score) 
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE total_score = %s
+            """
+            cursor.execute(sql, (student_id, new_score, new_score))
+
+            conn.commit()
+
+            print(f"✅ 成绩更新成功: 学号={student_id}, 新成绩={new_score}")
+            return jsonify({
+                'success': True,
+                'message': f'学号 {student_id} 的成绩已更新为 {new_score}'
+            })
+    except Exception as e:
+        print(f"❌ 更新成绩错误: {e}")
+        return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
+    finally:
+        conn.close()
+
+@app.route('/api/admin/delete_student', methods=['POST'])
+def delete_student():
+    """删除学生"""
+    data = request.json
+    student_id = data.get('student_id')
+
+    print(f"📝 删除学生请求: 学号={student_id}")
+
+    if not student_id:
+        return jsonify({'success': False, 'message': '参数错误：缺少学号'})
+
+    conn = get_db()
+    if not conn:
+        return jsonify({'success': False, 'message': '数据库连接失败'})
+
+    try:
+        with conn.cursor() as cursor:
+            # 1. 检查学生是否存在
+            cursor.execute("SELECT student_id, user_id FROM students WHERE student_id = %s", (student_id,))
+            student = cursor.fetchone()
+
+            if not student:
+                return jsonify({'success': False, 'message': f'学号 {student_id} 不存在'})
+
+            user_id = student['user_id']
+
+            # 2. 先删除用户（级联删除学生和成绩）
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+            conn.commit()
+
+            print(f"✅ 学生删除成功: 学号={student_id}")
+            return jsonify({
+                'success': True,
+                'message': f'学号 {student_id} 已删除'
+            })
+    except Exception as e:
+        print(f"❌ 删除学生错误: {e}")
+        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
+    finally:
+        conn.close()
+
+@app.route('/api/student/myinfo', methods=['GET'])
+def get_my_info():
+    """学生查看自己的信息"""
+    student_id = request.args.get('student_id')
+
+    if not student_id:
+        return jsonify({'success': False, 'message': '参数错误：缺少学号'})
+
+    conn = get_db()
+    if not conn:
+        return jsonify({'success': False, 'message': '数据库连接失败'})
+
+    try:
+        with conn.cursor() as cursor:
+            sql = """
+                SELECT 
+                    s.student_id,
+                    s.name,
+                    s.gender,
+                    IFNULL(sc.total_score, 0) as score
+                FROM students s
+                LEFT JOIN scores sc ON s.student_id = sc.student_id
+                WHERE s.student_id = %s
+            """
+            cursor.execute(sql, (student_id,))
+            info = cursor.fetchone()
+
+            if info:
+                return jsonify({
+                    'success': True,
+                    'data': info
+                })
+            else:
+                return jsonify({'success': False, 'message': '学生不存在'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+# ==================== 页面路由 ====================
+@app.route('/')
+def index():
+    """首页（登录页）"""
+    return render_template('login.html')
+
+@app.route('/admin')
+def admin():
+    """管理员页面"""
+    return render_template('admin.html')
+
+@app.route('/student')
+def student():
+    """学生页面"""
+    return render_template('student.html')
+
+# ==================== 启动服务器 ====================
+if __name__ == '__main__':
+    print("=" * 50)
+    print("🎓 学生成绩管理系统")
+    print("🌐 访问地址: http://localhost:5000")
+    print("👨‍💼 管理员账号: admin / 88888")
+    print("👨‍🎓 学生账号: 2023001 / 2023001")
+    print("=" * 50)
+
+    app.run(
+        host='0.0.0.0',
+        port=5000,
+        debug=True
+    )
